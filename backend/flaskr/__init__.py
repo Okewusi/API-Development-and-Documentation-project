@@ -1,3 +1,4 @@
+from crypt import methods
 import os
 from unicodedata import category
 from flask import Flask, request, abort, jsonify
@@ -32,17 +33,32 @@ def create_app(test_config=None):
     Create an endpoint to handle GET requests
     for all available categories.
     """
-    @app.route('/',methods=["GET"])
-    def index():
-        all_categories = Category.query.order_by(Category.id).all()
-        if len(all_categories) == 0:
-            abort(404)
-        formatted_categories = [category.format() for category in all_categories]
+    @app.route('/categories')
+    def get_categories():
+        try:
+            all_categories = Category.query.order_by(Category.id).all()
+            if len(all_categories) == 0:
+                abort(404)
+            formatted_categories = [category.format() for category in all_categories]
 
-        return jsonify({
-            "success" : True,
-            "categories": formatted_categories
-        })
+            return jsonify({
+                "success" : True,
+                "categories": formatted_categories
+            })
+        except:
+            abort(422)
+
+    QUESTIONS_PER_PAGE = 10
+
+    def paginated_questions(request, all_questions):
+        page = request.args.get('page', 1, type=int)
+        start = (page-1)* QUESTIONS_PER_PAGE
+        end = start + QUESTIONS_PER_PAGE
+
+        questions = [question.format() for question in all_questions]
+        current_questions = questions[start: end]
+
+        return current_questions
 
 
     """
@@ -51,12 +67,30 @@ def create_app(test_config=None):
     including pagination (every 10 questions).
     This endpoint should return a list of questions,
     number of total questions, current category, categories.
+    
 
     TEST: At this point, when you start the application
     you should see questions and categories generated,
     ten questions per page and pagination at the bottom of the screen for three pages.
     Clicking on the page numbers should update the questions.
     """
+    
+
+    @app.route('/questions')
+    def get_questions():
+        try:
+            all_questions = Question.query.order_by(Question.id).all()
+            current_questions = paginated_questions(request, all_questions)
+
+            return jsonify({
+                "success": True,
+                "questions": current_questions,
+                "total_questions": len(current_questions),
+                "current_category": "All"
+            })
+        except:
+            abort(422)
+
 
     """
     @TODO:
@@ -65,6 +99,25 @@ def create_app(test_config=None):
     TEST: When you click the trash icon next to a question, the question will be removed.
     This removal will persist in the database and when you refresh the page.
     """
+
+    @app.route('/questions/<int:question_id>', methods=["DELETE"])
+    def delete_question(question_id):
+        try:
+            question = Question.query.filter(Question.id==question_id).one_or_none()
+            if question is None:
+                abort(404)
+            question.delete()
+
+            all_questions = Question.query.order_by(Question.id).all()
+            current_questions = paginated_questions(request, all_questions)
+            return jsonify({
+                "success": True,
+                "deleted":question_id,
+                "questions": current_questions,
+                "total_questions": len(current_questions)
+            })
+        except:
+            abort
 
     """
     @TODO:
