@@ -1,5 +1,6 @@
 from crypt import methods
 import os
+from tkinter.messagebox import NO
 from unicodedata import category
 from flask import Flask, request, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
@@ -117,7 +118,7 @@ def create_app(test_config=None):
                 "total_questions": len(current_questions)
             })
         except:
-            abort
+            abort(422)
 
     """
     @TODO:
@@ -125,10 +126,41 @@ def create_app(test_config=None):
     which will require the question and answer text,
     category, and difficulty score.
 
+
     TEST: When you submit a question on the "Add" tab,
     the form will clear and the question will appear at the end of the last page
     of the questions list in the "List" tab.
     """
+
+    @app.route("/questions", methods=["POST"])
+    def create_question():
+        body = request.get_json()
+
+        new_question = body.get("question", None)
+        new_answer = body.get("answer", None)
+        new_category = body.get("category", None)
+        new_difficulty = body.get("difficulty", None)
+
+        try:
+            question = Question(question=new_question, answer=new_answer, category=new_category, difficulty= new_difficulty)
+            question.insert()
+
+            all_questions = Question.query.order_by(Question.id).all()
+            current_questions = paginated_questions(request, all_questions)
+
+            return jsonify({
+                "success": True,
+                "created":question.id,
+                "questions": current_questions,
+                "total_questions": len(current_questions)
+            })
+        except:
+            abort(422)
+
+
+
+
+
 
     """
     @TODO:
@@ -141,6 +173,23 @@ def create_app(test_config=None):
     Try using the word "title" to start.
     """
 
+    @app.route('/questions/search', methods=['POST'])
+    def search_questions():
+        body = request.get_json()
+        search_term = body.get('searchTerm', None)
+
+        try:
+            search_results = Question.query.filter(Question.question.ilike(f"%{search_term}%")).all()
+            formatted_results = [question.format() for question in search_results]
+
+            return jsonify({
+                "success" : True,
+                "results": formatted_results,
+                "total_questions" : len(search_results)
+            })
+        except:
+            abort(422)
+
     """
     @TODO:
     Create a GET endpoint to get questions based on category.
@@ -149,6 +198,26 @@ def create_app(test_config=None):
     categories in the left column will cause only questions of that
     category to be shown.
     """
+
+    @app.route('/categories/<int:category_id>/questions')
+    def retrieve_questions_by_category(category_id):
+        category = Category.query.get(category_id)
+        if category is None:
+            abort(404)
+
+        try:
+            #get questions in selected category 
+            questions = Question.query.order_by(Question.id).filter(Question.category== str(category_id)).all()
+            current_questions = paginated_questions(request, questions)
+
+            return jsonify({
+                "success": True,
+                "questions": current_questions,
+                "current_category": category.type,
+                "total_questions": len(questions)
+            })        
+        except:
+            abort(422)    
 
     """
     @TODO:
@@ -162,11 +231,78 @@ def create_app(test_config=None):
     and shown whether they were correct or not.
     """
 
+    @app.route('/quizzes', methods=['POST'])
+    def play_quiz():
+
+        try:
+            body = request.get_json()
+            category = body['quiz_category', None]
+            previous_questions = body["previous_questions", None]
+            
+
+            #if a particular category is selected and if not
+            if category['id'] != 0:
+                questions = Question.query.filter(Question.category == category["id"]).all()
+            else:
+                questions = Question.query.all()
+
+            #function for getting random question
+            def get_a_random_question():
+                next_question = random.choice(questions).format()
+                return next_question
+            
+            next_question = get_a_random_question()
+
+            seen_question = False
+            if next_question['id'] in previous_questions:
+                seen_question = True
+            
+            while seen_question:
+                next_question = get_a_random_question()
+
+                if (len(previous_questions) == len(questions)):
+                    return jsonify({
+                    'success': True,
+                    'question': "None, game over"
+                    })
+
+            return jsonify({
+            'success': True,
+            'question': next_question
+            })
+        except:
+            abort(422)
+
+
     """
     @TODO:
     Create error handlers for all expected errors
     including 404 and 422.
     """
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        return jsonify({
+            "success": False,
+            "error": 400,
+            "message": 'Bad request'
+        }), 400
+    
+    @app.errorhandler(404)
+    def not_found(error):
+        return jsonify({
+            "success": False,
+            "error": 404,
+            "message": 'Not found'
+        }), 404
+
+    @app.errorhandler(422)
+    def unprocessable_entity(error):
+        return jsonify({
+            "success": False,
+            "error": 422,
+            "message": 'Unprocessable Entity'
+        }), 422
 
     return app
 
